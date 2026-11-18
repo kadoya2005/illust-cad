@@ -119,6 +119,9 @@ function render() { renderArt(); renderView(); }
 function tempTool(ctrl, alt) {
   if (S.spaceDown) return ctrl ? 'zoom' : 'hand';
   if (ctrl && !SEL_TOOLS.has(S.tool)) return S.lastSelTool;
+  // 選択ツール ⇄ ダイレクト選択ツール：Ctrl を押している間だけ入れ替わる（イラレと同じ）
+  if (ctrl && S.tool === 'select') return 'direct';
+  if (ctrl && S.tool === 'direct') return 'select';
   if (alt && S.tool === 'addAnchor') return 'deleteAnchor';
   if (alt && S.tool === 'deleteAnchor') return 'addAnchor';
   return S.tool;

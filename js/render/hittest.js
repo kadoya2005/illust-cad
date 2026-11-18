@@ -31,6 +31,18 @@ function hitHandle(sp) {
   return best;
 }
 function hitBBoxHandle(sp) { const h = S.bboxHits.find((b) => Math.abs(b.x - sp.x) <= 5 && Math.abs(b.y - sp.y) <= 5); return h ? h.id : null; }
+// バウンディングボックスの四隅の少し外側（回転）。返すのは角の名前（nw / ne / se / sw）
+function hitBBoxRotate(sp) {
+  const nw = S.bboxHits.find((b) => b.id === 'nw'), se = S.bboxHits.find((b) => b.id === 'se');
+  if (!nw || !se) return null;
+  const inside = sp.x > nw.x && sp.x < se.x && sp.y > nw.y && sp.y < se.y;
+  if (inside) return null;
+  for (const id of ['nw', 'ne', 'se', 'sw']) {
+    const c = S.bboxHits.find((b) => b.id === id);
+    if (c && Math.hypot(c.x - sp.x, c.y - sp.y) <= 18) return id;
+  }
+  return null;
+}
 function hitGuide(sp) {
   if (!S.showGuides || S.guidesLocked) return -1;
   for (let i = doc.guides.length - 1; i >= 0; i--) {

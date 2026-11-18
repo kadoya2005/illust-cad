@@ -94,6 +94,26 @@ const HANDLE_CURSOR = (() => {
     + '<polyline points="15,4 4,12 15,20" fill="none" stroke="#000" stroke-width="1.6" stroke-linejoin="miter" stroke-linecap="square"/></svg>';
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 4 12, default`;
 })();
+// 選択ツール＝黒い矢印、ダイレクト選択ツール＝白い矢印（先端がクリック位置）
+const svgCursor = (body, hx, hy, fb) => `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">' + body + '</svg>')}") ${hx} ${hy}, ${fb}`;
+const ARROW_PTS = '2,2 2,19 6.5,15 9.5,21.5 12.2,20.3 9.3,14 15,14';
+const SELECT_CURSOR = svgCursor(`<polygon points="${ARROW_PTS}" fill="#000" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>`, 2, 2, 'default');
+const DIRECT_CURSOR = svgCursor(`<polygon points="${ARROW_PTS}" fill="#fff" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/>`, 2, 2, 'default');
+// バウンディングボックスの角の外：回転のカーソル（曲がった両矢印）。角の向きに合わせて回す
+const ROTATE_CURSORS = {};
+for (const [id, deg] of Object.entries({ ne: 0, se: 90, sw: 180, nw: 270 })) {
+  const arc = '<path d="M5,9 Q15,9 15,19" fill="none" stroke="STK" stroke-width="SW"/>'
+    + '<polygon points="5,5 5,13 1,9" fill="STK" stroke="STK" stroke-width="SW2"/>'
+    + '<polygon points="11,19 19,19 15,23" fill="STK" stroke="STK" stroke-width="SW2"/>';
+  const layer = (stk, sw, sw2) => arc.replace(/STK/g, stk).replace(/SW2/g, sw2).replace(/SW/g, sw);
+  ROTATE_CURSORS[id] = svgCursor(`<g transform="rotate(${deg} 12 12)">${layer('#fff', 4, 2.5)}${layer('#000', 1.5, 0.5)}</g>`, 12, 12, 'crosshair');
+}
+function overRotate(t) {
+  if (S.drag) return S.drag.type === 'bbRotate' ? S.drag.corner : null;
+  if (t !== 'select' || !S.mouseScr || !S.sel.size) return null;
+  if (hitBBoxHandle(S.mouseScr)) return null;
+  return hitBBoxRotate(S.mouseScr);
+}
 function overHandle(t) {
   if (S.drag) return S.drag.type === 'handle';
   if (!S.mouseScr) return false;
@@ -103,7 +123,11 @@ function overHandle(t) {
 function updateCursor() {
   const t = displayTool();
   let c = 'default';
-  if (overHandle(t)) c = HANDLE_CURSOR;
+  const rot = overRotate(t);
+  if (rot) c = ROTATE_CURSORS[rot];
+  else if (overHandle(t)) c = HANDLE_CURSOR;
+  else if (t === 'select') c = SELECT_CURSOR;
+  else if (t === 'direct') c = DIRECT_CURSOR;
   else if (t === 'hand') c = S.drag && S.drag.type === 'pan' ? 'grabbing' : 'grab';
   else if (t === 'zoom') c = S.keys.alt ? 'zoom-out' : 'zoom-in';
   else if (!SEL_TOOLS.has(t)) c = 'crosshair';

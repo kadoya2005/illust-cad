@@ -4,7 +4,12 @@
 const Tools = {
   select: {
     down(e, p, sp) {
-      if (S.sel.size) { const hb = hitBBoxHandle(sp); if (hb) { startScale(hb); return; } }
+      if (S.sel.size) {
+        const hb = hitBBoxHandle(sp);
+        if (hb) { startScale(hb); return; }
+        const rc = hitBBoxRotate(sp);
+        if (rc && !hitItem(p)) { startBBoxRotate(rc, p); return; }
+      }
       const hit = hitItem(p);
       if (hit) {
         const target = topOf(hit.it);
@@ -26,6 +31,7 @@ const Tools = {
       const d = S.drag;
       if (d.type === 'move') dragMove(e, p);
       else if (d.type === 'scale') dragScale(e, p);
+      else if (d.type === 'bbRotate') dragBBoxRotate(e, p);
       else if (d.type === 'guideMove') dragGuide(p);
       else S.marquee.b = p;
     },
@@ -39,6 +45,7 @@ const Tools = {
         endMove();
       }
       else if (d.type === 'scale') { if (d.moved) commit(); }
+      else if (d.type === 'bbRotate') endBBoxRotate();
       else if (d.type === 'guideMove') endGuideMove(sp);
       else endMarquee();
     },

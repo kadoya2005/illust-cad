@@ -94,6 +94,31 @@ function dragScale(e, p) {
   renderArt();
 }
 
+// バウンディングボックスの角の外をドラッグ：中心で回転（Shift で 45° ずつ）
+function startBBoxRotate(corner, p) {
+  const bb = Geo.bbox(selectedItems());
+  if (!bb) return;
+  S.drag = { type: 'bbRotate', corner, c: P(bb.x + bb.w / 2, bb.y + bb.h / 2), start: p, orig: snapshotSel(), moved: false, ang: 0 };
+}
+function dragBBoxRotate(e, p) {
+  const d = S.drag, c = d.c;
+  if (!d.moved && vdist(p, d.start) * view.z < 2) return;
+  d.moved = true;
+  let a = Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(d.start.y - c.y, d.start.x - c.x);
+  if (e.shiftKey) a = snapAngle(a, Math.PI / 4);
+  d.ang = a;
+  restoreFrom(d.orig);
+  const f = rotateFn(c, a);
+  for (const id of d.orig.keys()) { const fi = findItem(id); if (fi) mapItem(fi.item, f); }
+  renderArt();
+}
+function endBBoxRotate() {
+  const d = S.drag;
+  if (!d.moved) return;
+  S.lastTransform = { kind: 'rotate', prm: { ang: d.ang }, copy: false, origin: null };
+  commit();
+}
+
 function startHandleDrag(hh, breakMode) {
   const f = findItem(hh.id);
   S.drag = { type: 'handle', id: hh.id, s: hh.s, i: hh.i, which: hh.which, orig: clone(f.item.subs[hh.s].nodes[hh.i]), breakMode, moved: false, cands: cachedCands() };
@@ -109,10 +134,14 @@ function dragHandle(e, p) {
   d.moved = true;
   nd[d.which] = P(q.x, q.y);
   const other = d.which === 'hin' ? 'hout' : 'hin';
-  if (e.altKey || d.breakMode) {
+  // Alt を一度押したら、離しても折れたまま（片方だけ動く＝鋭角）
+  if (e.altKey) d.breakMode = true;
+  if (d.breakMode) {
     nd.smooth = false;
     nd[other] = o[other] ? P(o[other].x, o[other].y) : null;
-  } else if (o.smooth && o[other]) {
+  } else if ((o.smooth || isSmoothPair(o)) && o[other]) {
+    // なめらかな点：反対側の方向線も一直線のまま回る（長さはそのまま）
+    nd.smooth = true;
     const L = vdist(o[other], o), v = vsub(o, q), l = vlen(v);
     if (l > 1e-9) nd[other] = vadd(o, vmul(v, L / l));
   }

@@ -16,6 +16,7 @@ function refreshMods(e) {
     if (S.mouse && S.mouseScr && displayTool() === 'pen') S.penHint = penHint(S.mouse, S.keys.alt, S.mouseScr);
     showToolStatus();
     drawOverlay();
+    updateCursor();   // 方向線や枠の位置が描き直されたあとで、もう一度
   }
 }
 
