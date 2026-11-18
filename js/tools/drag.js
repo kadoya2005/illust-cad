@@ -88,6 +88,7 @@ function dragScale(e, p) {
     else if (hasW || hasE) { sy = Math.abs(sx); ay = cy; }
     else { sx = Math.abs(sy); ax = cx; }
   }
+  d.prm = { sx, sy }; d.frac = { fx: bb.w ? (ax - bb.x) / bb.w : 0.5, fy: bb.h ? (ay - bb.y) / bb.h : 0.5 };
   restoreFrom(d.orig);
   const f = (q) => P(ax + (q.x - ax) * sx, ay + (q.y - ay) * sy);
   for (const id of d.orig.keys()) { const fi = findItem(id); if (fi) mapItem(fi.item, f); }
@@ -116,6 +117,14 @@ function endBBoxRotate() {
   const d = S.drag;
   if (!d.moved) return;
   S.lastTransform = { kind: 'rotate', prm: { ang: d.ang }, copy: false, origin: null };
+  commit();
+}
+
+function endScale() {
+  const d = S.drag;
+  if (!d.moved || !d.prm) return;
+  // Ctrl+D でくり返せるように。基準点は「枠のどこか」で覚えておく（左上の角、中心など）
+  S.lastTransform = { kind: 'scale', prm: d.prm, copy: false, origin: null, frac: d.frac };
   commit();
 }
 

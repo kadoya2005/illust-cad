@@ -123,7 +123,10 @@ function applyXf(kind, prm, copy, origin, preview) {
 function transformAgain() {
   const t = S.lastTransform;
   if (!t || !S.sel.size) return;
-  applyXf(t.kind, t.prm, t.copy, t.origin);
+  let origin = t.origin;
+  if (t.frac) { const bb = Geo.bbox(selectedItems()); if (bb) origin = P(bb.x + bb.w * t.frac.fx, bb.y + bb.h * t.frac.fy); }
+  applyXf(t.kind, t.prm, t.copy, origin);
+  if (t.frac) S.lastTransform = t;   // applyXf が上書きした基準点を、枠の中の位置に戻す
 }
 
 function arrange(mode) {

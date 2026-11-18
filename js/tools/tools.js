@@ -44,7 +44,7 @@ const Tools = {
         }
         endMove();
       }
-      else if (d.type === 'scale') { if (d.moved) commit(); }
+      else if (d.type === 'scale') endScale();
       else if (d.type === 'bbRotate') endBBoxRotate();
       else if (d.type === 'guideMove') endGuideMove(sp);
       else endMarquee();
