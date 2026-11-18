@@ -52,7 +52,13 @@ document.querySelectorAll('[data-menu]').forEach((btn) => btn.addEventListener('
   const box = $('menu-' + btn.dataset.menu);
   const open = box.hidden;
   closeMenus();
-  if (open) { buildMenu(btn.dataset.menu); box.hidden = false; }
+  if (open) {
+    buildMenu(btn.dataset.menu);
+    const r = btn.getBoundingClientRect();
+    box.style.top = r.bottom + 4 + 'px';
+    box.style.left = Math.max(4, Math.min(r.left, innerWidth - 254)) + 'px';
+    box.hidden = false;
+  }
 }));
 document.addEventListener('click', (e) => { if (!e.target.closest('.dropdown') && !e.target.closest('[data-menu]')) closeMenus(); });
 
