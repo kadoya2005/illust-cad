@@ -1,0 +1,85 @@
+# イラレCAD（2D 試作）
+
+Illustrator と同じショートカットで使える、ベジェ曲線のお絵かきアプリです。
+将来の「パスで形をつくる 3D モデラー」の土台として作っています（構想は [IDEA.md](IDEA.md)）。
+
+Adobe Illustrator とは関係のない、非公式のツールです。
+
+## 使い方
+
+`index.html` を Chrome か Edge で開くだけで動きます（インストール不要）。
+
+- **保存（Ctrl+S）は `.icad`**：このアプリの作業用の形式です（中身は JSON）。ガイドや、3D で使う ID もそのまま残ります
+- **SVG 書き出し（Ctrl+Alt+E）**：Illustrator で開ける SVG にします。レイヤーは `<g data-name>` で書き出します
+- Illustrator で書き出した SVG も「開く」で読み込めます。SVG を開いたときは、Ctrl+S でその SVG に上書きします
+- SVG ファイルを画面にドロップすると、いまのレイヤーに配置します
+- コピーすると SVG のテキストとしてクリップボードに入るので、Illustrator に貼り付けられます（未確認）
+- 作業中の内容はブラウザに自動で残ります（次に開いたときに復元）
+
+## できること
+
+- ペン、ダイレクト選択、アンカーの追加・削除・切り替え
+  - ペン：ドラッグ中に Alt で切り返し（鋭角）、Space でアンカーを移動、Alt でアンカーポイントツールに一時切り替え
+  - ダイレクト選択：曲線の線をドラッグで形を変える、Delete でその線だけ消す
+- 長方形、楕円形、直線、回転、リフレクト（折り返し）、拡大・縮小、スポイト
+  - 回転・リフレクト・拡大縮小は、クリックで基準点、離すときに Alt でコピー、Alt+クリックで数値入力（イラレと同じ）
+- 移動（Enter で数値入力）、Alt ドラッグで複製、変形の繰り返し（Ctrl+D）、平均（Ctrl+Alt+J）
+- グループ（Ctrl+G）、連結（Ctrl+J）、複合パス（Ctrl+8）、重ね順、ロック、隠す
+- パスファインダー：合体、前面オブジェクトで型抜き、交差、中マド、分割、刈り込み、背面オブジェクトで型抜き
+- 整列：揃える・分布・等間隔に分布（選択範囲／キーオブジェクト／アートボード基準）
+- パスのオフセット（マイター・ラウンド・ベベル）
+- 定規（Ctrl+R）とガイド、グリッド（Ctrl+@）、スマートガイド（Ctrl+U）
+- レイヤー（表示／ロック／並べ替え／名前変更）
+- 塗りと線、線幅、アウトライン表示（Ctrl+Y）、環境設定（Ctrl+K：矢印キーで動く量）
+
+ショートカットの一覧はアプリの「ショートカット一覧」ボタン（F1）で見られます。
+
+## まだできないこと
+
+- 文字、画像、グラデーション（読み込むときは飛ばします）
+- シェイプ形成ツール、ライブコーナー、パスの単純化
+- 3D（次の段階）
+- Ctrl+N・Ctrl+W・Ctrl+T（ブラウザが使っているキーなので取れません）
+
+## プログラムの構成
+
+ビルドなしで `file://` でも動くように、ふつうの `<script>` を決まった順で読み込んでいます（順番は `index.html` に書いてあります）。
+
+| フォルダー | ファイル | 中身 |
+|---|---|---|
+| `js/core/` | `geom.js` | ベジェ曲線の計算（分割・最近点・範囲・円弧→ベジェ） |
+| | `config.js` | 設定値、ツールの一覧 |
+| | `state.js` | ドキュメントの形（`newDoc`）とアプリの状態 `S` |
+| | `document.js` | パスとグループの木の操作、読み込んだデータの整え |
+| | `selection.js` | 選択 |
+| | `history.js` | 取り消し・やり直し・自動保存（画面には直接さわらない） |
+| | `prefs.js` | 表示の設定を覚えておく |
+| | `snap.js` | スマートガイド・ガイド・グリッドへの吸着 |
+| | `edit.js` | 編集の操作（変形、グループ、パスファインダー、色、貼り付けなど） |
+| | `pathfinder.js` | paper.js を使ったパスファインダーの計算 |
+| | `offset.js` | パスのオフセット（Clipper で計算して、ベジェに戻す） |
+| `js/render/` | `view.js` | 画面への描画（作品・選択の表示・定規・グリッド） |
+| | `hittest.js` | 当たり判定 |
+| `js/tools/` | `drag.js` / `transform.js` / `shapes.js` / `tools.js` | 各ツールの動き |
+| `js/ui/` | `mouse.js` / `keyboard.js` / `panels.js` / `dialogs.js` / `help.js` | マウス、キーボード、パネル、ダイアログ、一覧 |
+| `js/io/` | `svgio.js` / `files.js` / `clipboard.js` | SVG、ファイル、クリップボード |
+| `js/vendor/` | `paper-core.min.js` | [paper.js](http://paperjs.org/) 0.12.18（MIT ライセンス） |
+| | `clipper.js` | [clipper-lib](https://www.npmjs.com/package/clipper-lib) 6.4.2（Boost Software License） |
+| `js/` | `app.js` | 起動 |
+
+### データの形（`.icad`）
+
+```
+doc = {
+  version: 2, units: 'pt', width, height,
+  guides: [{ axis: 'x' | 'y', v }],
+  layers: [{ id, name, color, visible, locked, items: [パス or グループ] }],
+  solids: []   // 3D の形を置く場所（断面はパスの ID で参照。レイヤーとは別に持つ）
+}
+パス     = { id, subs: [{ nodes: [{ x, y, hin, hout, smooth }], closed }], fill, stroke, sw, rule, hidden, locked }
+グループ = { id, type: 'group', name, children: [...], hidden, locked }
+```
+
+- 座標の単位は pt（イラレの SVG と同じ）。3D の書き出しのときに mm へ換算します
+- ハンドル `hin` / `hout` は絶対座標。`null` はハンドルなし
+- ID は保存・読み込み（`.icad` でも SVG の `data-icad-id` でも）で変わりません

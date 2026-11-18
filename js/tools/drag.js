@@ -1,0 +1,252 @@
+'use strict';
+// イラレCAD：ツールが使うドラッグ処理とペンの補助
+
+// ================= ツール =================
+function startMove(p, e, nodesOnly) {
+  const d = { type: 'move', start: p, nodesOnly, alt: e.altKey && !nodesOnly, dup: false, moved: false, dx: 0, dy: 0, orig: snapshotSel() };
+  // 吸着に使う点：動かすアンカー、または選択範囲の角・辺の中点・中心
+  const refs = [];
+  const skip = { items: new Set(), nodes: new Set() };
+  if (nodesOnly) {
+    for (const it of selectedItems()) {
+      const set = S.sel.get(it.id);
+      it.subs.forEach((sb, s) => sb.nodes.forEach((n, i) => { if (set.has(key(s, i))) { skip.nodes.add(it.id + '|' + key(s, i)); if (refs.length < 200) refs.push(P(n.x, n.y)); } }));
+    }
+  } else {
+    const items = selectedItems();
+    items.forEach((it) => skip.items.add(it.id));
+    const bb = Geo.bbox(items);
+    if (bb) for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) refs.push(P(bb.x + bb.w * fx, bb.y + bb.h * fy));
+    const ha = hitAnchor(p);
+    if (ha && S.sel.has(ha.it.id)) refs.unshift(P(ha.it.subs[ha.s].nodes[ha.i].x, ha.it.subs[ha.s].nodes[ha.i].y));
+  }
+  d.refs = refs;
+  d.cands = buildCands(skip);
+  S.drag = d;
+}
+function dragMove(e, p) {
+  const d = S.drag;
+  const q = e.shiftKey ? constrain45(d.start, p) : p;
+  let dx = q.x - d.start.x, dy = q.y - d.start.y;
+  if (!d.moved && Math.hypot(dx, dy) * view.z < 3) return;
+  d.moved = true;
+  S.snapViz = null;
+  if (!e.shiftKey) {
+    const sn = snapRefs(d.refs.map((r) => P(r.x + dx, r.y + dy)), d.cands);
+    dx += sn.dx; dy += sn.dy; S.snapViz = sn.viz;
+  }
+  if (d.alt && !d.dup) { restoreFrom(d.orig); duplicateSelection(); d.dup = true; d.orig = snapshotSel(); }
+  for (const [id, subs] of d.orig) {
+    const f = findItem(id);
+    if (!f) continue;
+    f.item.subs = clone(subs);
+    const set = S.sel.get(id);
+    f.item.subs.forEach((sb, s) => sb.nodes.forEach((n, i) => { if (d.nodesOnly && !(set && set.has(key(s, i)))) return; moveNode(n, dx, dy); }));
+  }
+  d.dx = dx; d.dy = dy;
+  renderArt();
+}
+function endMove() {
+  const d = S.drag;
+  if (d.moved) { S.lastTransform = { kind: 'move', prm: { dx: d.dx, dy: d.dy }, copy: d.dup, origin: null }; S.dlgLast.move = { dx: d.dx, dy: d.dy }; commit(); }
+}
+
+function startMarquee(p, mode) { S.drag = { type: 'marquee', mode }; S.marquee = { a: p, b: p }; }
+function endMarquee() {
+  const { a, b } = S.marquee;
+  const r = { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) };
+  if ((r.x1 - r.x0) * view.z < 2 && (r.y1 - r.y0) * view.z < 2) return;
+  const inR = (q) => q.x >= r.x0 && q.x <= r.x1 && q.y >= r.y0 && q.y <= r.y1;
+  for (const it of editableItemsTopDown()) {
+    if (S.drag.mode === 'items') { if (Geo.samples(it).some(inR)) selectNode(topOf(it), true); continue; }
+    let set = S.sel.get(it.id);
+    it.subs.forEach((sb, s) => sb.nodes.forEach((n, i) => {
+      if (!inR(n)) return;
+      if (!set) { set = new Set(); S.sel.set(it.id, set); }
+      set.add(key(s, i));
+    }));
+  }
+}
+
+function startScale(h) { S.drag = { type: 'scale', h, bb: Geo.bbox(selectedItems()), orig: snapshotSel(), moved: false, cands: buildCands({ items: new Set(S.sel.keys()) }) }; }
+function dragScale(e, p) {
+  const d = S.drag, bb = d.bb, h = d.h;
+  if (!bb) return;
+  d.moved = true;
+  S.snapViz = null;
+  if (!e.shiftKey) { const sn = snapPoint(p, d.cands); p = sn.p; S.snapViz = sn.viz; }
+  const hasW = h.includes('w'), hasE = h.includes('e'), hasN = h.includes('n'), hasS = h.includes('s');
+  const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2;
+  let ax = hasW ? bb.x + bb.w : hasE ? bb.x : cx;
+  let ay = hasN ? bb.y + bb.h : hasS ? bb.y : cy;
+  if (e.altKey) { ax = cx; ay = cy; }
+  const hx = hasW ? bb.x : bb.x + bb.w, hy = hasN ? bb.y : bb.y + bb.h;
+  let sx = (hasW || hasE) && Math.abs(hx - ax) > 1e-9 ? (p.x - ax) / (hx - ax) : 1;
+  let sy = (hasN || hasS) && Math.abs(hy - ay) > 1e-9 ? (p.y - ay) / (hy - ay) : 1;
+  if (e.shiftKey) {
+    if ((hasW || hasE) && (hasN || hasS)) { const m = Math.max(Math.abs(sx), Math.abs(sy)); sx = Math.sign(sx || 1) * m; sy = Math.sign(sy || 1) * m; }
+    else if (hasW || hasE) { sy = Math.abs(sx); ay = cy; }
+    else { sx = Math.abs(sy); ax = cx; }
+  }
+  restoreFrom(d.orig);
+  const f = (q) => P(ax + (q.x - ax) * sx, ay + (q.y - ay) * sy);
+  for (const id of d.orig.keys()) { const fi = findItem(id); if (fi) mapItem(fi.item, f); }
+  renderArt();
+}
+
+function startHandleDrag(hh, breakMode) {
+  const f = findItem(hh.id);
+  S.drag = { type: 'handle', id: hh.id, s: hh.s, i: hh.i, which: hh.which, orig: clone(f.item.subs[hh.s].nodes[hh.i]), breakMode, moved: false, cands: cachedCands() };
+}
+function dragHandle(e, p) {
+  const d = S.drag, f = findItem(d.id);
+  if (!f) return;
+  const nd = f.item.subs[d.s].nodes[d.i], o = d.orig;
+  let q = p;
+  S.snapViz = null;
+  if (e.shiftKey) q = constrain45(o, p);
+  else { const sn = snapPoint(p, d.cands); q = sn.p; S.snapViz = sn.viz; }
+  d.moved = true;
+  nd[d.which] = P(q.x, q.y);
+  const other = d.which === 'hin' ? 'hout' : 'hin';
+  if (e.altKey || d.breakMode) {
+    nd.smooth = false;
+    nd[other] = o[other] ? P(o[other].x, o[other].y) : null;
+  } else if (o.smooth && o[other]) {
+    const L = vdist(o[other], o), v = vsub(o, q), l = vlen(v);
+    if (l > 1e-9) nd[other] = vadd(o, vmul(v, L / l));
+  }
+  renderArt();
+}
+
+function startConvert(ha, p) { S.drag = { type: 'convert', id: ha.it.id, s: ha.s, i: ha.i, start: p, moved: false }; }
+function dragConvert(e, p) {
+  const d = S.drag, f = findItem(d.id);
+  if (!f) return;
+  const nd = f.item.subs[d.s].nodes[d.i];
+  if (!d.moved && vdist(p, d.start) * view.z < 3) return;
+  d.moved = true;
+  const q = e.shiftKey ? constrain45(nd, p) : p;
+  nd.hout = P(q.x, q.y); nd.hin = P(2 * nd.x - q.x, 2 * nd.y - q.y); nd.smooth = true;
+  renderArt();
+}
+function endConvert() {
+  const d = S.drag, f = findItem(d.id);
+  if (f && !d.moved) { const nd = f.item.subs[d.s].nodes[d.i]; nd.hin = null; nd.hout = null; nd.smooth = false; renderArt(); }
+  commit();
+}
+
+// ---- ペン ----
+function drawingSub() {
+  if (!S.drawing) return null;
+  const f = findItem(S.drawing.id);
+  if (!f || !f.item.subs || !f.item.subs[S.drawing.s]) { S.drawing = null; return null; }
+  return f.item.subs[S.drawing.s];
+}
+function selectDrawingLast() {
+  const sb = drawingSub();
+  if (!sb) return;
+  S.sel.clear();
+  S.sel.set(S.drawing.id, new Set([key(S.drawing.s, sb.nodes.length - 1)]));
+}
+function endDrawing() {
+  const sb = drawingSub();
+  if (sb && sb.nodes.length < 2) {
+    const f = findItem(S.drawing.id);
+    f.item.subs.splice(S.drawing.s, 1);
+    if (!f.item.subs.length) removeItem(f.item.id);
+  }
+  S.drawing = null;
+  cleanSel(); render(); commit();
+}
+// ---- ダイレクト選択で曲線の線をドラッグ（イラレと同じく、つかんだ点が指についてくるように両側の方向線を伸ばす）----
+function startReshape(it, s, seg, t, p) {
+  const sb = it.subs[s], L = sb.nodes.length;
+  S.drag = { type: 'reshape', id: it.id, s, seg, t, start: p, moved: false, oa: clone(sb.nodes[seg]), ob: clone(sb.nodes[(seg + 1) % L]) };
+}
+function dragReshape(e, p) {
+  const d = S.drag, f = findItem(d.id);
+  if (!f) return;
+  const sb = f.item.subs[d.s], L = sb.nodes.length;
+  const a = sb.nodes[d.seg], b = sb.nodes[(d.seg + 1) % L];
+  const dx = p.x - d.start.x, dy = p.y - d.start.y;
+  if (!d.moved && Math.hypot(dx, dy) * view.z < 3) return;
+  d.moved = true;
+  // 曲線上の点 B(t) を (dx,dy) 動かすための、2つの制御点の動かし方
+  const t = Math.min(0.95, Math.max(0.05, d.t));
+  const k1 = 3 * (1 - t) * (1 - t) * t, k2 = 3 * (1 - t) * t * t;
+  const c = 1 / (k1 * (1 - t) + k2 * t);
+  const w1 = (1 - t) * c, w2 = t * c;
+  const oa = d.oa, ob = d.ob, c1 = oa.hout || oa, c2 = ob.hin || ob;
+  a.hout = P(c1.x + dx * w1, c1.y + dy * w1);
+  b.hin = P(c2.x + dx * w2, c2.y + dy * w2);
+  // なめらかなアンカーは、反対側の方向線も向きをそろえて折れないようにする
+  const keepSmooth = (n, o, moved, other) => {
+    if (!o.smooth || !o[other]) return;
+    const len = vdist(o[other], o), v = vsub(n, n[moved]), l = vlen(v);
+    if (l > 1e-9) n[other] = vadd(n, vmul(v, len / l));
+  };
+  keepSmooth(a, oa, 'hout', 'hin');
+  keepSmooth(b, ob, 'hin', 'hout');
+  renderArt();
+}
+// 選んだ線（セグメント）を消す：閉じたパスは開き、開いたパスは2本に分かれる
+function deleteSegment() {
+  const g = S.segSel;
+  S.segSel = null;
+  const f = g && findItem(g.id);
+  if (!f) return false;
+  const it = f.item, sb = it.subs[g.s];
+  if (!sb) return false;
+  const n = sb.nodes, L = n.length;
+  if (sb.closed) {
+    sb.nodes = n.slice(g.seg + 1).concat(n.slice(0, g.seg + 1));
+    sb.closed = false;
+  } else {
+    const first = n.slice(0, g.seg + 1), second = n.slice(g.seg + 1);
+    it.subs.splice(g.s, 1);
+    if (first.length >= 2) it.subs.splice(g.s, 0, { nodes: first, closed: false });
+    if (second.length >= 2) {
+      const other = { ...clone(it), id: uid(), subs: [{ nodes: second, closed: false }] };
+      f.parent.splice(f.index + 1, 0, other);
+    }
+    if (!it.subs.length) removeItem(it.id);
+  }
+  S.sel.clear();
+  if (L) { cleanSel(); render(); commit(); }
+  return true;
+}
+
+// ペンのカーソルの横に出す印（イラレのカーソルの変化の代わり）
+function penHint(p, alt, sp) {
+  const sb = drawingSub();
+  if (alt) {
+    // Alt：アンカーポイントツール（切り返し）
+    if (sp && hitHandle(sp)) return '^ 切り返し';
+    if (sb && vdist(sb.nodes[sb.nodes.length - 1], p) <= tol()) return '^ 切り返し';
+    if (hitAnchor(p)) return '^';
+  }
+  if (sb) {
+    const n = sb.nodes;
+    if (n.length >= 2 && vdist(n[0], p) <= tol()) return '○';
+    if (vdist(n[n.length - 1], p) <= tol()) return '^';
+    const ha = hitAnchor(p);
+    if (ha && !(ha.it.id === S.drawing.id && ha.s === S.drawing.s)) {
+      const ob = ha.it.subs[ha.s];
+      if (!ob.closed && (ha.i === 0 || ha.i === ob.nodes.length - 1)) return '連結';
+    }
+    return '';
+  }
+  const ha = hitAnchor(p);
+  if (ha) {
+    const ob = ha.it.subs[ha.s];
+    if (!ob.closed && (ha.i === 0 || ha.i === ob.nodes.length - 1)) return '/';
+    if (S.sel.has(ha.it.id)) return '−';
+  }
+  for (const it of selectedItems()) { const nr = Geo.nearest(it, p); if (nr && nr.seg >= 0 && nr.d <= tol()) return '+'; }
+  return '*';
+}
+function penSnap(p, e, from) {
+  if (e.shiftKey && from) return constrain45(from, p);
+  return snapPoint(p, cachedCands()).p;
+}
